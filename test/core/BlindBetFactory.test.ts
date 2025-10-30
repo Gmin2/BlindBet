@@ -129,10 +129,16 @@ describe("BlindBetFactory", function () {
         resolver: signers.resolver.address,
       };
 
-      await expect(marketFactory.connect(signers.alice).deployMarket(params))
+      const tx = await marketFactory.connect(signers.alice).deployMarket(params);
+      const receipt = await tx.wait();
+
+      // Get the deployed market address after deployment
+      const marketAddress = await marketFactory.getMarketAddress(0);
+
+      await expect(tx)
         .to.emit(marketFactory, "MarketDeployed")
         .withArgs(
-          await marketFactory.getMarketAddress(0), // Will be next address
+          marketAddress,
           0, // marketId
           question,
           signers.alice.address

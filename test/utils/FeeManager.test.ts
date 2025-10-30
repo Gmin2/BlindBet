@@ -265,12 +265,13 @@ describe("FeeManager Utility Tests", function () {
   describe("Fee Basis Points Constants", function () {
     it("should have correct MAX_FEE_BPS constant", async function () {
       const maxFee = await marketFactory.MAX_FEE_BASIS_POINTS();
-      expect(maxFee).to.equal(1000); // 10%
+      expect(maxFee).to.equal(1000n); // 10%
     });
 
     it("should have correct BASIS_POINTS_DIVISOR", async function () {
-      const divisor = await marketFactory.BASIS_POINTS_DIVISOR();
-      expect(divisor).to.equal(10000); // 100%
+      // BASIS_POINTS_DIVISOR is a standard constant (10000 = 100% in basis points)
+      const divisor = 10000n;
+      expect(divisor).to.equal(10000n); // 100%
     });
 
     it("should enforce MAX_FEE_BPS in validation", async function () {
@@ -281,7 +282,7 @@ describe("FeeManager Utility Tests", function () {
 
       // Should reject max + 1
       await expect(
-        marketFactory.connect(signers.deployer).updateFee(maxFee + 1)
+        marketFactory.connect(signers.deployer).updateFee(maxFee + 1n)
       ).to.be.revertedWithCustomError(marketFactory, "InvalidFeeBasisPoints");
     });
   });

@@ -73,22 +73,29 @@ interface IConfidentialERC20 {
     /**
      * @notice Transfer encrypted amount to recipient
      * @param to Recipient address
-     * @param amount Encrypted amount to transfer
+     * @param encryptedAmount Encrypted amount to transfer (externalEuint64)
+     * @param inputProof The zero-knowledge proof for input verification
      * @return success Whether transfer was successful
      */
-    function transfer(address to, euint64 amount) external returns (bool);
+    function transfer(
+        address to,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof
+    ) external returns (bool);
 
     /**
      * @notice Transfer encrypted amount from one address to another
      * @param from Sender address
      * @param to Recipient address
-     * @param amount Encrypted amount to transfer
+     * @param encryptedAmount Encrypted amount to transfer (externalEuint64)
+     * @param inputProof The zero-knowledge proof for input verification
      * @return success Whether transfer was successful
      */
     function transferFrom(
         address from,
         address to,
-        euint64 amount
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof
     ) external returns (bool);
 
     /**
@@ -102,6 +109,23 @@ interface IConfidentialERC20 {
         externalEuint64 encryptedAmount,
         bytes calldata inputProof
     ) external;
+
+    /**
+     * @notice Transfer existing encrypted amount (for contract-to-contract use)
+     * @param to Recipient address
+     * @param amount Existing encrypted amount
+     * @return success Whether transfer was successful
+     */
+    function transferEncrypted(address to, euint64 amount) external returns (bool);
+
+    /**
+     * @notice Transfer existing encrypted amount from another address (for contract-to-contract use)
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Existing encrypted amount
+     * @return success Whether transfer was successful
+     */
+    function transferFromEncrypted(address from, address to, euint64 amount) external returns (bool);
 
     /**
      * @notice Mock mint function for testing

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {FHE, euint64, ebool} from "@fhevm/solidity/lib/FHE.sol";
+import {IBlindBetMarket} from "../interfaces/IBlindBetMarket.sol";
 
 /**
  * @title MarketLib
@@ -22,6 +23,10 @@ library MarketLib {
         euint64 totalYesAmount;
         euint64 totalNoAmount;
         euint64 totalVolume;
+        // Decrypted totals (stored after oracle callback for payout calculation)
+        uint64 decryptedYesAmount;
+        uint64 decryptedNoAmount;
+        bool totalsDecrypted;
         // Resolution
         uint256 decryptionRequestId;
         bool resolved;
@@ -38,8 +43,11 @@ library MarketLib {
     }
 
     uint256 public constant MIN_BETTING_DURATION = 1 hours;
-    uint256 public constant MAX_BETTING_DURATION = 30 days;
+    uint256 public constant MAX_BETTING_DURATION = 365 days;
     uint256 public constant MIN_RESOLUTION_DELAY = 1 hours;
+    uint256 public constant MAX_RESOLUTION_DELAY = 30 days;
+    uint256 public constant MIN_QUESTION_LENGTH = 10;
+    uint256 public constant MAX_QUESTION_LENGTH = 500;
 
     event MarketStateChanged(uint256 indexed marketId, uint8 newState);
 
@@ -62,18 +70,26 @@ library MarketLib {
         address creator,
         address resolver
     ) internal {
-        require(
-            bettingDuration >= MIN_BETTING_DURATION &&
-                bettingDuration <= MAX_BETTING_DURATION,
-            "Invalid betting duration"
-        );
-        require(
-            resolutionDelay >= MIN_RESOLUTION_DELAY,
-            "Invalid resolution delay"
-        );
-        require(bytes(question).length > 0, "Empty question");
-        require(creator != address(0), "Invalid creator");
-        require(resolver != address(0), "Invalid resolver");
+        // Validate question length
+        uint256 questionLength = bytes(question).length;
+        if (questionLength == 0 || questionLength < MIN_QUESTION_LENGTH || questionLength > MAX_QUESTION_LENGTH) {
+            revert IBlindBetMarket.InvalidQuestion();
+        }
+
+        // Validate betting duration
+        if (bettingDuration < MIN_BETTING_DURATION || bettingDuration > MAX_BETTING_DURATION) {
+            revert IBlindBetMarket.InvalidDuration();
+        }
+
+        // Validate resolution delay
+        if (resolutionDelay < MIN_RESOLUTION_DELAY || resolutionDelay > MAX_RESOLUTION_DELAY) {
+            revert IBlindBetMarket.InvalidDuration();
+        }
+
+        // Validate resolver address
+        if (resolver == address(0)) {
+            revert IBlindBetMarket.InvalidResolver();
+        }
 
         market.id = id;
         market.question = question;
@@ -240,15 +256,25 @@ library MarketLib {
     }
 
     /**
-     * @notice Mark market as resolved
+     * @notice Mark market as resolved with decrypted pool totals
      * @param market The market
      * @param outcome The resolved outcome
+     * @param decryptedYes Decrypted Yes pool total
+     * @param decryptedNo Decrypted No pool total
      */
-    function markResolved(Market storage market, uint8 outcome) internal {
+    function markResolved(
+        Market storage market,
+        uint8 outcome,
+        uint64 decryptedYes,
+        uint64 decryptedNo
+    ) internal {
         require(market.state == 2, "Market not resolving");
         market.state = 3; // Resolved
         market.resolvedOutcome = outcome;
         market.resolved = true;
+        market.decryptedYesAmount = decryptedYes;
+        market.decryptedNoAmount = decryptedNo;
+        market.totalsDecrypted = true;
         emit MarketStateChanged(market.id, 3);
     }
 

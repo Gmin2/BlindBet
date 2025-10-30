@@ -63,9 +63,13 @@ describe("Full Market Lifecycle", function () {
 
       // Note: In production, this would trigger oracle decryption
       // For testing, we'll simulate the resolution flow
-      await expect(market.connect(signers.resolver).requestResolution(marketId))
+      const resolutionTx = await market.connect(signers.resolver).requestResolution(marketId);
+      const resolutionReceipt = await resolutionTx.wait();
+      const resolutionTimestamp = (await ethers.provider.getBlock(resolutionReceipt!.blockNumber))!.timestamp;
+
+      await expect(resolutionTx)
         .to.emit(market, "ResolutionRequested")
-        .withArgs(marketId, 0, await time.latest());
+        .withArgs(marketId, 0, resolutionTimestamp);
 
       // In a real scenario, oracle would call resolutionCallback
       // and then resolver would set outcome

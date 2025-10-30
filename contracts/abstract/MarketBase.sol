@@ -203,7 +203,7 @@ abstract contract MarketBase is
         address resolver
     ) internal pure {
         if (bytes(question).length == 0) {
-            revert IBlindBetMarket.EmptyQuestion();
+            revert IBlindBetMarket.InvalidQuestion();
         }
         if (
             bettingDuration < MarketLib.MIN_BETTING_DURATION ||

@@ -17,7 +17,7 @@ library PayoutCalculator {
     /**
      * @notice Calculate payout for a position based on market outcome
      * @param position The user's position
-     * @param market The market data
+     * @param market The market data (with decrypted totals)
      * @param outcome The resolved outcome (1=Yes, 2=No, 3=Invalid)
      * @return payout The calculated payout amount (encrypted)
      */
@@ -30,18 +30,18 @@ library PayoutCalculator {
             // Invalid: Refund both positions
             payout = FHE.add(position.yesAmount, position.noAmount);
         } else if (outcome == 1) {
-            // Yes wins: Calculate payout for Yes position
+            // Yes wins: Calculate payout for Yes position with proportional profit
             payout = _calculateWinningPayout(
                 position.yesAmount,
-                market.totalYesAmount,
-                market.totalNoAmount
+                market,
+                true // isYesWinner
             );
         } else if (outcome == 2) {
-            // No wins: Calculate payout for No position
+            // No wins: Calculate payout for No position with proportional profit
             payout = _calculateWinningPayout(
                 position.noAmount,
-                market.totalNoAmount,
-                market.totalYesAmount
+                market,
+                false // isYesWinner
             );
         } else {
             // NotSet: shouldn't happen, return 0
@@ -50,68 +50,74 @@ library PayoutCalculator {
     }
 
     /**
-     * @notice Calculate winning payout with proportional share and fee deduction
-     * @dev Currently simplified due to FHE division limitations
-     * @param userPosition User's position on winning side
-     * @return Payout amount after fees
+     * @notice Calculate winning payout with proportional share using decrypted pool totals
+     * @dev Uses decrypted pool sizes to calculate proportional payout with profit distribution
+     * @param userPosition User's position on winning side (encrypted)
+     * @param market The market with decrypted totals
+     * @param isYesWinner Whether Yes side won
+     * @return Payout amount including principal + proportional profit (encrypted)
      */
     function _calculateWinningPayout(
         euint64 userPosition,
-        euint64 /* totalWinningPool */,
-        euint64 /* totalLosingPool */
-    ) private pure returns (euint64) {
-        // Total pool = winning + losing
-        // euint64 totalPool = FHE.add(totalWinningPool, totalLosingPool);
+        MarketLib.Market storage market,
+        bool isYesWinner
+    ) private returns (euint64) {
+        // Ensure totals have been decrypted
+        require(market.totalsDecrypted, "Totals not decrypted");
 
-        // Calculate fee: (totalPool * FEE_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR
-        // euint64 feeAmount = FHE.div(
-        //     FHE.mul(totalPool, FHE.asEuint64(FEE_BASIS_POINTS)),
-        //     BASIS_POINTS_DENOMINATOR
-        // );
+        uint64 winningPool = isYesWinner ? market.decryptedYesAmount : market.decryptedNoAmount;
+        uint64 losingPool = isYesWinner ? market.decryptedNoAmount : market.decryptedYesAmount;
 
-        // Prize pool after fee deduction
-        // euint64 prizePool = FHE.sub(totalPool, feeAmount); // TODO: Use for proportional payout
+        // If no one bet on winning side or losing side, return principal only
+        if (winningPool == 0 || losingPool == 0) {
+            return userPosition;
+        }
 
-        // User gets back their principal
-        euint64 principal = userPosition;
+        // Calculate total pool and fee
+        uint64 totalPool = winningPool + losingPool;
+        uint64 feeAmount = (totalPool * FEE_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
+        uint64 prizePool = totalPool - feeAmount;
 
-        // Calculate share of losing pool
-        // share = (userPosition / totalWinningPool) * (prizePool - totalWinningPool)
-        // Since FHE division is expensive and we can't do floating point:
-        // We approximate: user share ≈ userPosition (minimum guaranteed)
+        // Calculate user's share of winning pool as a fraction
+        // We use fixed-point arithmetic with 18 decimals for precision
+        uint256 PRECISION = 1e18;
 
-        // For MVP: Return principal only (safe, no loss)
-        // TODO: Implement proper proportional payout with fixed-point math
-        // payout = principal + (principal * losingPool / winningPool)
+        // userShare = (userPosition / winningPool) in fixed-point
+        // This represents the user's percentage of the winning pool
+        // We calculate: profit = userShare * losingPool
 
-        return principal;
+        // First, multiply userPosition by losingPool to get: userPosition * losingPool
+        // Then divide by winningPool to get the proportional profit
+        // profit = (userPosition * losingPool) / winningPool
+
+        // Calculate profit using encrypted userPosition and plaintext pool sizes
+        // profit = FHE.div(FHE.mul(userPosition, losingPool), winningPool)
+        euint64 profit = FHE.div(
+            FHE.mul(userPosition, FHE.asEuint64(losingPool)),
+            winningPool
+        );
+
+        // Total payout = principal + profit
+        // The profit already accounts for the proportional share, so we just add it to principal
+        euint64 payout = FHE.add(userPosition, profit);
+
+        return payout;
     }
 
     /**
-     * @notice Calculate total payout including share of losing pool (advanced)
-     * @dev This function is currently not implemented due to FHE limitations
-     *      FHE.div only supports plaintext divisors, not encrypted divisors
-     *      For now, use calculateSimplePayout which returns principal only
-     * @param userPosition User's position on winning side
-     * @return Total payout (currently just returns user position as MVP)
+     * @notice Calculate total fee collected for a market
+     * @dev Uses decrypted pool totals to calculate accurate fee
+     * @param market The market with decrypted totals
+     * @return Fee amount (plaintext)
      */
-    function calculateFullPayout(
-        euint64 userPosition,
-        euint64 /* totalWinningPool */,
-        euint64 /* totalLosingPool */
-    ) internal pure returns (euint64) {
-        // TODO: Implement proportional payout calculation
-        // Current FHE limitations:
-        // - FHE.div only works with plaintext divisors (uint64)
-        // - Cannot divide euint64 by euint64
-        //
-        // Possible solutions for future:
-        // 1. Use fixed-point arithmetic with scaling factors
-        // 2. Request decryption of pool sizes for precise division
-        // 3. Use approximation algorithms that avoid division
-        //
-        // For MVP: Return principal (safe, no loss to users)
-        return userPosition;
+    function calculateMarketFee(MarketLib.Market storage market)
+        internal
+        view
+        returns (uint64)
+    {
+        require(market.totalsDecrypted, "Totals not decrypted");
+        uint64 totalPool = market.decryptedYesAmount + market.decryptedNoAmount;
+        return (totalPool * FEE_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
     }
 
     /**

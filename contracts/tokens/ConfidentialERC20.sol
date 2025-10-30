@@ -87,11 +87,29 @@ contract ConfidentialERC20 is SepoliaConfig, IConfidentialERC20 {
     /**
      * @inheritdoc IConfidentialERC20
      */
-    function transfer(address to, euint64 amount)
-        external
-        override
-        returns (bool)
-    {
+    function transfer(
+        address to,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof
+    ) external override returns (bool) {
+        // Convert external encrypted input to internal encrypted value
+        euint64 amount = FHE.fromExternal(encryptedAmount, inputProof);
+
+        _transfer(msg.sender, to, amount);
+        return true;
+    }
+
+    /**
+     * @notice Transfer existing encrypted amount (for contract-to-contract use)
+     * @dev This version accepts existing euint64 handles and verifies sender permission
+     * @param to Recipient address
+     * @param amount Existing encrypted amount
+     * @return success Whether transfer was successful
+     */
+    function transferEncrypted(address to, euint64 amount) external returns (bool) {
+        // Verify sender is authorized to access the encrypted amount
+        if (!FHE.isSenderAllowed(amount)) revert InvalidAmount();
+
         _transfer(msg.sender, to, amount);
         return true;
     }
@@ -99,16 +117,41 @@ contract ConfidentialERC20 is SepoliaConfig, IConfidentialERC20 {
     /**
      * @inheritdoc IConfidentialERC20
      */
-    function transferFrom(address from, address to, euint64 amount)
-        external
-        override
-        returns (bool)
-    {
-        // Check and update allowance
-        _spendAllowance(from, msg.sender, amount);
+    function transferFrom(
+        address from,
+        address to,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof
+    ) external override returns (bool) {
+        // Convert external encrypted input to internal encrypted value
+        euint64 amount = FHE.fromExternal(encryptedAmount, inputProof);
 
-        // Execute transfer
-        _transfer(from, to, amount);
+        // Check and update allowance, get actual spendable amount
+        euint64 actualAmount = _spendAllowance(from, msg.sender, amount);
+
+        // Execute transfer with actual allowed amount (0 if insufficient allowance)
+        _transfer(from, to, actualAmount);
+
+        return true;
+    }
+
+    /**
+     * @notice Transfer existing encrypted amount from another address (for contract-to-contract use)
+     * @dev This version accepts existing euint64 handles and verifies sender permission
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Existing encrypted amount
+     * @return success Whether transfer was successful
+     */
+    function transferFromEncrypted(address from, address to, euint64 amount) external returns (bool) {
+        // Verify sender is authorized to access the encrypted amount
+        if (!FHE.isSenderAllowed(amount)) revert InvalidAmount();
+
+        // Check and update allowance, get actual spendable amount
+        euint64 actualAmount = _spendAllowance(from, msg.sender, amount);
+
+        // Execute transfer with actual allowed amount (0 if insufficient allowance)
+        _transfer(from, to, actualAmount);
 
         return true;
     }
@@ -147,9 +190,6 @@ contract ConfidentialERC20 is SepoliaConfig, IConfidentialERC20 {
         if (from == address(0)) revert InvalidAddress();
         if (to == address(0)) revert InvalidAddress();
 
-        // Grant contract permission to use the amount
-        FHE.allowThis(amount);
-
         // Check if sender has sufficient balance
         ebool canTransfer = FHE.le(amount, balances[from]);
 
@@ -179,18 +219,32 @@ contract ConfidentialERC20 is SepoliaConfig, IConfidentialERC20 {
      * @param owner Token owner
      * @param spender Spender address
      * @param amount Amount to spend
+     * @return actualAmount The actual amount that can be spent (0 if insufficient allowance)
      */
     function _spendAllowance(
         address owner,
         address spender,
         euint64 amount
-    ) internal {
+    ) internal returns (euint64 actualAmount) {
         euint64 currentAllowance = allowances[owner][spender];
+
+        // Initialize allowance if not set
+        if (!FHE.isInitialized(currentAllowance)) {
+            currentAllowance = FHE.asEuint64(0);
+            FHE.allowThis(currentAllowance);
+        }
 
         // Check if allowance is sufficient
         ebool isAllowed = FHE.le(amount, currentAllowance);
 
-        // Calculate new allowance (unchanged if insufficient)
+        // Calculate actual spendable amount (0 if insufficient allowance)
+        actualAmount = FHE.select(
+            isAllowed,
+            amount,
+            FHE.asEuint64(0)
+        );
+
+        // Calculate new allowance (subtract actual amount spent)
         euint64 newAllowance = FHE.select(
             isAllowed,
             FHE.sub(currentAllowance, amount),

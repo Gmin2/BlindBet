@@ -127,7 +127,9 @@ describe("ConfidentialERC20", function () {
         .encrypt();
 
       // Transfer
-      const tx = await token.connect(signers.alice).transfer(signers.bob.address, encryptedAmount.handles[0]);
+      const tx = await token
+        .connect(signers.alice)
+        .transfer(signers.bob.address, encryptedAmount.handles[0], encryptedAmount.inputProof);
       await tx.wait();
 
       // Verify Bob received tokens
@@ -150,7 +152,9 @@ describe("ConfidentialERC20", function () {
         .add64(transferAmount)
         .encrypt();
 
-      await expect(token.connect(signers.alice).transfer(signers.bob.address, encryptedAmount.handles[0]))
+      await expect(
+        token.connect(signers.alice).transfer(signers.bob.address, encryptedAmount.handles[0], encryptedAmount.inputProof)
+      )
         .to.emit(token, "Transfer")
         .withArgs(signers.alice.address, signers.bob.address);
     });
@@ -164,7 +168,9 @@ describe("ConfidentialERC20", function () {
         .encrypt();
 
       // This should not revert, but transfer 0
-      const tx = await token.connect(signers.alice).transfer(signers.bob.address, encryptedAmount.handles[0]);
+      const tx = await token
+        .connect(signers.alice)
+        .transfer(signers.bob.address, encryptedAmount.handles[0], encryptedAmount.inputProof);
       await tx.wait();
 
       // Verify Bob received 0 tokens
@@ -275,7 +281,12 @@ describe("ConfidentialERC20", function () {
 
       const tx = await token
         .connect(signers.bob)
-        .transferFrom(signers.alice.address, signers.carol.address, encryptedAmount.handles[0]);
+        .transferFrom(
+          signers.alice.address,
+          signers.carol.address,
+          encryptedAmount.handles[0],
+          encryptedAmount.inputProof
+        );
       await tx.wait();
 
       // Verify Carol received tokens
@@ -300,7 +311,12 @@ describe("ConfidentialERC20", function () {
 
       await token
         .connect(signers.bob)
-        .transferFrom(signers.alice.address, signers.carol.address, encryptedAmount.handles[0]);
+        .transferFrom(
+          signers.alice.address,
+          signers.carol.address,
+          encryptedAmount.handles[0],
+          encryptedAmount.inputProof
+        );
 
       const allowance = await token.allowance(signers.alice.address, signers.bob.address);
       const decryptedAllowance = await fhevm.userDecryptEuint(
@@ -324,7 +340,12 @@ describe("ConfidentialERC20", function () {
       // Should not revert
       const tx = await token
         .connect(signers.bob)
-        .transferFrom(signers.alice.address, signers.carol.address, encryptedAmount.handles[0]);
+        .transferFrom(
+          signers.alice.address,
+          signers.carol.address,
+          encryptedAmount.handles[0],
+          encryptedAmount.inputProof
+        );
       await tx.wait();
 
       // Carol should have 0
@@ -350,7 +371,12 @@ describe("ConfidentialERC20", function () {
       await expect(
         token
           .connect(signers.bob)
-          .transferFrom(signers.alice.address, signers.carol.address, encryptedAmount.handles[0])
+          .transferFrom(
+            signers.alice.address,
+            signers.carol.address,
+            encryptedAmount.handles[0],
+            encryptedAmount.inputProof
+          )
       )
         .to.emit(token, "Transfer")
         .withArgs(signers.alice.address, signers.carol.address);
@@ -380,7 +406,7 @@ describe("ConfidentialERC20", function () {
   describe("ConfidentialUSDC Specific", function () {
     it("should have correct initial supply holder", async function () {
       const holder = await token.initialSupplyHolder();
-      expect(holder).to.equal(ethers.ZeroAddress); // Deployed with ZeroAddress
+      expect(holder).to.equal(signers.deployer.address); // Deployed with deployer address
     });
 
     it("should allow anyone to mock mint", async function () {

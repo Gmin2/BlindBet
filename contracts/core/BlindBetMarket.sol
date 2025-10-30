@@ -107,8 +107,8 @@ contract BlindBetMarket is MarketBase, IBlindBetMarket, IMarketResolver {
         // Allow token contract to access the amount temporarily
         FHE.allowTransient(amount, address(token));
 
-        // Execute transfer
-        token.transferFrom(msg.sender, address(this), amount);
+        // Execute transfer (using encrypted version for contract-to-contract transfer)
+        token.transferFromEncrypted(msg.sender, address(this), amount);
 
         // Get balance after transfer
         euint64 balanceAfter = token.balanceOf(address(this));
@@ -206,19 +206,16 @@ contract BlindBetMarket is MarketBase, IBlindBetMarket, IMarketResolver {
             "Invalid request ID"
         );
 
-        // Decode decrypted totals (not used in current implementation)
-        // (uint64 totalYes, uint64 totalNo) = abi.decode(
-        //     cleartexts,
-        //     (uint64, uint64)
-        // );
+        // Decode decrypted totals
+        (uint64 totalYes, uint64 totalNo) = abi.decode(
+            cleartexts,
+            (uint64, uint64)
+        );
 
-        // For now, just mark as ready for resolution
-        // The actual outcome will be set by resolver via setResolution()
-        // This separation allows oracle to reveal data, then resolver to interpret it
+        // Mark as resolved with decrypted totals (outcome will be set separately by resolver)
+        market.markResolved(uint8(Outcome.NotSet), totalYes, totalNo);
 
-        // Mark as resolved (outcome will be set separately)
-        market.markResolved(uint8(Outcome.NotSet));
-
+        emit PoolTotalsDecrypted(marketId, totalYes, totalNo, block.timestamp);
         emit MarketResolved(marketId, Outcome.NotSet, block.timestamp);
     }
 
@@ -280,9 +277,9 @@ contract BlindBetMarket is MarketBase, IBlindBetMarket, IMarketResolver {
             market.resolvedOutcome
         );
 
-        // Transfer payout
+        // Transfer payout (using encrypted version for contract-to-contract transfer)
         FHE.allowTransient(payout, address(token));
-        token.transfer(msg.sender, payout);
+        token.transferEncrypted(msg.sender, payout);
 
         emit WinningsClaimed(
             marketId,

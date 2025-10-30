@@ -79,6 +79,13 @@ interface IBlindBetMarket {
         uint256 timestamp
     );
 
+    event PoolTotalsDecrypted(
+        uint256 indexed marketId,
+        uint64 totalYesAmount,
+        uint64 totalNoAmount,
+        uint256 timestamp
+    );
+
     event FeeCollected(uint256 indexed marketId, bytes32 encryptedFeeAmount);
 
     error MarketNotFound();
@@ -95,6 +102,7 @@ interface IBlindBetMarket {
     error InvalidDuration();
     error InvalidResolver();
     error EmptyQuestion();
+    error InvalidQuestion();
 
     /**
      * @notice Place an encrypted bet on a market
